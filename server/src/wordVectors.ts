@@ -76,18 +76,18 @@ export function buildNeighborPool(vectors: VectorMap, limit: number): NeighborPo
 }
 
 /**
- * Similarity of the k-th nearest neighbor of `targetVector` within `pool` — the bar a
- * guess's raw cosine similarity to a word must clear to count as "in range" of it, rather
- * than judging closeness by raw similarity magnitude alone. Scans the pool once, keeping
- * only the top k via a bounded min-heap instead of a full sort. Callers should cache the
- * result per word, since it only ever depends on the static embedding.
+ * The top k nearest-neighbor similarities of `targetVector` within `pool`, sorted
+ * descending (index 0 = closest neighbor). Scans the pool once, keeping only the top k via
+ * a bounded min-heap instead of a full sort of the whole pool. Callers should cache the
+ * result per word (see rankWithinNeighbors), since it only ever depends on the static
+ * embedding.
  */
-export function findTopKThreshold(
+export function computeNeighborSimilarities(
   pool: NeighborPool,
   targetVector: Float32Array,
   excludeWord: string,
   k: number
-): number | null {
+): Float32Array | null {
   const { words, flat, norms, dim } = pool;
   const n = words.length;
 
@@ -140,5 +140,23 @@ export function findTopKThreshold(
     }
   }
 
-  return heapSize > 0 ? heap[0] : null;
+  const sorted = new Float32Array(heap.subarray(0, heapSize));
+  sorted.sort().reverse();
+  return sorted;
+}
+
+/**
+ * Where `similarity` would land within a word's cached, descending neighbor-similarity
+ * list — 1 is the nearest neighbor. Returns a rank greater than the list length if
+ * `similarity` doesn't clear even the weakest kept neighbor (i.e. outside the top k).
+ */
+export function rankWithinNeighbors(sortedDesc: Float32Array, similarity: number): number {
+  let lo = 0;
+  let hi = sortedDesc.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sortedDesc[mid] > similarity) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo + 1;
 }

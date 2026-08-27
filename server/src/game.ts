@@ -4,7 +4,8 @@ import { tokenize, normalizeWord, stemWord, type Token } from "./tokenizer.js";
 import {
   cosineSimilarity,
   buildNeighborPool,
-  findTopKThreshold,
+  computeNeighborSimilarities,
+  rankWithinNeighbors,
   type VectorMap,
   type NeighborPool,
 } from "./wordVectors.js";
@@ -12,12 +13,37 @@ import {
 // A guess only counts as "close" to a hidden word if it's within that word's actual
 // nearest-neighbor rank in the embedding, not just above some raw similarity score —
 // this mirrors real Pedantle's red/orange/green model instead of a smooth 0-100 gradient.
-const TOP_K_NEIGHBORS = 1000;
+// Kept tight (100, not the ~1000 real Pedantle-style games often use) because looser cutoffs
+// let one-off embedding curiosities through — e.g. "xylophone" lands at rank 317 against
+// "cactus" (cosine 0.35) despite no real relation. 100 still admits genuine content-word
+// neighbors while cutting off most of that noise. It does NOT fix words whose embeddings are
+// inherently non-specific (very common/short words like "of", "a", "is" — see
+// STOPWORD_FREQUENCY_CUTOFF below): "history" ranks 87th-nearest to "of" outright, so no
+// cutoff short of gutting real hints elsewhere would exclude it by rank alone.
+const TOP_K_NEIGHBORS = 100;
+
+// Score is driven by RANK within the neighbor list, not raw cosine similarity — raw
+// similarity magnitudes aren't comparable across words (a diffuse word's threshold might
+// sit at 0.35, a specific word's at 0.15), so the same similarity value means wildly
+// different things depending on the target. Rank is directly comparable: rank 5 is always
+// "very close," regardless of word. p > 1 makes the curve concave — only genuinely
+// top-ranked guesses glow meaningfully warm, the tail of the neighbor list stays dim — which
+// reads as a more discriminating hint than a flat linear-in-rank falloff.
+const SCORE_CURVE_EXPONENT = 3;
 
 // Neighbor ranking only searches the 50k most frequent words (see buildNeighborPool) —
 // scanning the full ~400k-word vocab took ~500ms *per word*, which made even one guess
 // against a fresh article (dozens of still-hidden words) take tens of seconds.
 const NEIGHBOR_POOL_SIZE = 50_000;
+
+// The most frequent words in the embedding (articles, prepositions, conjunctions, auxiliary
+// verbs, punctuation tokens) have such non-specific vectors that huge swaths of ordinary
+// vocabulary score misleadingly high similarity against them — "history" is the 87th-nearest
+// neighbor of "of" outright, not a marginal match a rank cutoff could exclude. These words
+// are excluded from the closeness system entirely: still guessable by exact/stemmed match
+// (see submitGuess), never hinted or ghosted. GloVe's vocab file is frequency-sorted, so
+// "most frequent" is just "first N" — see buildStopwordSet.
+const STOPWORD_FREQUENCY_CUTOFF = 300;
 
 export class NotFoundError extends Error {}
 export class BadRequestError extends Error {}
@@ -74,17 +100,31 @@ interface GameState {
 
 let globalVectors: VectorMap | null = null;
 let globalPool: NeighborPool | null = null;
+let globalStopwords: Set<string> | null = null;
 let devMode = false;
 const games = new Map<string, GameState>();
 
-// Neighbor-rank thresholds are expensive to compute (a pool scan per word, see
-// findTopKThreshold) but only ever depend on the static embedding, so they're cached here
-// for the lifetime of the server rather than per game — common words warm up quickly.
-const neighborThresholdCache = new Map<string, number>();
+// vectors' Map iteration order is frequency order (see buildNeighborPool for why), so the
+// first `limit` entries are exactly the most frequent words in the embedding.
+function buildStopwordSet(vectors: VectorMap, limit: number): Set<string> {
+  const stopwords = new Set<string>();
+  for (const word of vectors.keys()) {
+    if (stopwords.size >= limit) break;
+    stopwords.add(word);
+  }
+  return stopwords;
+}
+
+// Each entry is a word's top-1000 neighbor similarities, sorted descending — expensive to
+// compute (a pool scan per word, see computeNeighborSimilarities) but only ever depends on
+// the static embedding, so it's cached here for the lifetime of the server rather than per
+// game. Guess-time lookups are then just a binary search (rankWithinNeighbors).
+const neighborSimilarityCache = new Map<string, Float32Array>();
 
 export function initGameModule(vectors: VectorMap, options: { devMode?: boolean } = {}): void {
   globalVectors = vectors;
   globalPool = buildNeighborPool(vectors, NEIGHBOR_POOL_SIZE);
+  globalStopwords = buildStopwordSet(vectors, STOPWORD_FREQUENCY_CUTOFF);
   devMode = options.devMode ?? false;
 }
 
@@ -98,16 +138,39 @@ function requirePool(): NeighborPool {
   return globalPool;
 }
 
-function getNeighborThreshold(word: string, vector: Float32Array): number | null {
-  const cached = neighborThresholdCache.get(word);
+function requireStopwords(): Set<string> {
+  if (!globalStopwords) throw new Error("Game module not initialized with word vectors");
+  return globalStopwords;
+}
+
+function getNeighborSimilarities(word: string, vector: Float32Array): Float32Array | null {
+  const cached = neighborSimilarityCache.get(word);
   if (cached !== undefined) return cached;
-  const threshold = findTopKThreshold(requirePool(), vector, word, TOP_K_NEIGHBORS);
-  if (threshold !== null) neighborThresholdCache.set(word, threshold);
-  return threshold;
+  const sims = computeNeighborSimilarities(requirePool(), vector, word, TOP_K_NEIGHBORS);
+  if (sims !== null) neighborSimilarityCache.set(word, sims);
+  return sims;
+}
+
+// Converts a guess's rank among a word's nearest neighbors (1 = closest) into a 1-99
+// score. See SCORE_CURVE_EXPONENT for why this is rank-based rather than similarity-based.
+function scoreFromRank(rank: number, poolSize: number): number {
+  const percentile = 1 - (rank - 1) / poolSize;
+  return Math.max(1, Math.min(99, Math.round(100 * Math.pow(percentile, SCORE_CURVE_EXPONENT))));
+}
+
+// Precomputes and caches every target word's neighbor-similarity list up front, during
+// game creation, instead of lazily on whatever guess first needs each word. Same total
+// work either way, but this way the player eats the wait during "Loading a fresh
+// article..." rather than a guess suddenly hanging mid-game.
+function warmNeighborCache(uniqueWords: Map<string, TargetWord>): void {
+  for (const target of uniqueWords.values()) {
+    if (target.vector) getNeighborSimilarities(target.normalized, target.vector);
+  }
 }
 
 function buildUniqueWords(tokens: Token[], into: Map<string, TargetWord>): void {
   const vectors = requireVectors();
+  const stopwords = requireStopwords();
   for (const token of tokens) {
     if (!token.isWord) continue;
     // normalizeWord() strips accents (café -> cafe) so an ASCII guess matches; words in
@@ -115,10 +178,13 @@ function buildUniqueWords(tokens: Token[], into: Map<string, TargetWord>): void 
     // stay in the text but can never be revealed.
     const normalized = normalizeWord(token.text);
     if (!normalized || into.has(normalized)) continue;
+    // Stopwords get no vector at all, which submitGuess already treats as "no closeness
+    // signal" (see the `!target.vector` guard there) — same code path as a word absent
+    // from the embedding, just for a different reason. Still exact/stem-guessable.
     into.set(normalized, {
       normalized,
       stem: stemWord(token.text),
-      vector: vectors.get(normalized),
+      vector: stopwords.has(normalized) ? undefined : vectors.get(normalized),
     });
   }
 }
@@ -131,6 +197,7 @@ export async function createGame(): Promise<{ gameId: string; view: GameView }> 
   const uniqueWords = new Map<string, TargetWord>();
   buildUniqueWords(titleTokens, uniqueWords);
   buildUniqueWords(bodyTokens, uniqueWords);
+  warmNeighborCache(uniqueWords);
 
   const state: GameState = {
     title: article.title,
@@ -238,11 +305,12 @@ export function submitGuess(
     if (guessVector) {
       for (const target of state.uniqueWords.values()) {
         if (state.revealedStems.has(target.stem) || !target.vector) continue;
-        const threshold = getNeighborThreshold(target.normalized, target.vector);
-        if (threshold === null) continue;
+        const sims = getNeighborSimilarities(target.normalized, target.vector);
+        if (sims === null) continue;
         const similarity = cosineSimilarity(guessVector, target.vector);
-        if (similarity < threshold) continue; // outside this word's top-K neighbors: no hint
-        const scaled = Math.max(1, Math.min(99, Math.round(similarity * 100)));
+        const rank = rankWithinNeighbors(sims, similarity);
+        if (rank > sims.length) continue; // outside this word's top-K neighbors: no hint
+        const scaled = scoreFromRank(rank, sims.length);
         const prevBest = state.bestGuesses.get(target.normalized)?.score ?? 0;
         if (scaled > prevBest) {
           state.bestGuesses.set(target.normalized, { word: rawGuess, score: scaled });
