@@ -82,6 +82,17 @@ function countWords(text: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
+// MediaWiki's `extracts` API strips IPA pronunciation and audio-link templates
+// (e.g. `{{IPAc-en|...}}`, `{{Audio|...}}`) but leaves their surrounding parens and
+// separator punctuation behind — "Mayonnaise ({{IPAc-en|...}})" becomes "Mayonnaise ()"
+// instead of just "Mayonnaise". Strip any parenthetical that's left with nothing but
+// whitespace/commas/semicolons in it (plus the space before it), so it reads clean.
+const EMPTY_PAREN_RE = /\s*\([\s,;]*\)/g;
+
+function cleanExtractText(text: string): string {
+  return text.replace(EMPTY_PAREN_RE, "");
+}
+
 /**
  * Walk the full plaintext extract (with wiki-style == headings ==) and accumulate whole
  * paragraphs — never a partial one — until we have at least MIN_TOTAL_WORDS words, stopping
@@ -158,7 +169,7 @@ async function fetchOneCandidate(word: string): Promise<WikiArticle | null> {
     return null;
   }
 
-  const introText = selectIntro(page.extract);
+  const introText = selectIntro(cleanExtractText(page.extract));
   if (!introText) {
     if (process.env.WIKI_DEBUG) console.log("[wiki] reject too-short:", page.title);
     return null;

@@ -70,6 +70,7 @@ export type WordTemplate =
       length: number;
       temperature: number;
       hintText?: string;
+      peekText?: string;
     };
 
 export interface GameView {
@@ -219,7 +220,16 @@ export async function createGame(): Promise<{ gameId: string; view: GameView }> 
 // revealHints controls whether a hidden word's box shows a ghost overlay of the closest
 // guess made against it so far, once that guess has landed within its neighbor rank. The
 // title deliberately never does this, to keep it a blind guess like the rest of Pedantle.
-function buildTemplate(tokens: Token[], state: GameState, revealHints: boolean): WordTemplate[] {
+// allowPeek controls whether the client is sent the real text for a still-hidden word so it
+// can be clicked to view briefly — only meaningful once the game is already won, since the
+// title (the actual challenge) is by definition fully revealed by that point already; any
+// body words still hidden at that point are just leftover trivia, not a spoiler risk.
+function buildTemplate(
+  tokens: Token[],
+  state: GameState,
+  revealHints: boolean,
+  allowPeek: boolean
+): WordTemplate[] {
   return tokens.map((token) => {
     if (!token.isWord) {
       return { isWord: false, text: token.text };
@@ -237,6 +247,7 @@ function buildTemplate(tokens: Token[], state: GameState, revealHints: boolean):
       length: token.text.length,
       temperature: best?.score ?? 0,
       ...(revealHints && best ? { hintText: best.word } : {}),
+      ...(allowPeek ? { peekText: token.text } : {}),
     };
   });
 }
@@ -252,11 +263,12 @@ function isGameWon(state: GameState): boolean {
 }
 
 function buildView(state: GameState): GameView {
+  const won = isGameWon(state);
   const view: GameView = {
-    titleTemplate: buildTemplate(state.titleTokens, state, false),
-    bodyTemplate: buildTemplate(state.bodyTokens, state, true),
+    titleTemplate: buildTemplate(state.titleTokens, state, false, false),
+    bodyTemplate: buildTemplate(state.bodyTokens, state, true, won),
     guesses: [...state.guesses].sort((a, b) => b.temperature - a.temperature),
-    gameWon: isGameWon(state),
+    gameWon: won,
   };
   if (devMode) {
     view.debug = {

@@ -7,6 +7,7 @@ export type WordTemplate =
       length: number;
       temperature: number;
       hintText?: string;
+      peekText?: string;
     };
 
 export interface GuessRecord {

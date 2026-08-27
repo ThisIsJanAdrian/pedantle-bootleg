@@ -81,6 +81,19 @@ body {
   user-select: none;
 }
 
+.word--peekable {
+  cursor: pointer;
+}
+
+.word--peekable:hover {
+  outline: 1px solid #555;
+}
+
+.word--peeking {
+  outline: 1px solid #7ee787;
+  outline-offset: 1px;
+}
+
 .dev-panel {
   background: #332a00;
   border: 1px solid #7a6a1a;
