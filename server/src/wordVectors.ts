@@ -38,3 +38,107 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
+
+// A flat, cache-friendly slice of the vocabulary used only for nearest-neighbor ranking
+// (see findTopKThreshold). GloVe's vocab files are ordered by descending word frequency,
+// so `vectors`'s Map iteration order already IS frequency order — taking the first `limit`
+// entries keeps the neighbor universe to words a player might plausibly type, which is both
+// ~40x cheaper to scan than the full ~400k vocab and arguably more correct: an obscure
+// word's "nearest neighbor" being an even more obscure word isn't a useful hint anyway.
+export interface NeighborPool {
+  words: string[];
+  flat: Float32Array;
+  norms: Float32Array;
+  dim: number;
+}
+
+export function buildNeighborPool(vectors: VectorMap, limit: number): NeighborPool {
+  const words: string[] = [];
+  const vecs: Float32Array[] = [];
+  let dim = 0;
+  for (const [word, vec] of vectors) {
+    if (words.length >= limit) break;
+    dim = vec.length;
+    words.push(word);
+    vecs.push(vec);
+  }
+
+  const flat = new Float32Array(words.length * dim);
+  const norms = new Float32Array(words.length);
+  for (let i = 0; i < words.length; i++) {
+    flat.set(vecs[i], i * dim);
+    let sumSq = 0;
+    for (let d = 0; d < dim; d++) sumSq += vecs[i][d] * vecs[i][d];
+    norms[i] = Math.sqrt(sumSq);
+  }
+
+  return { words, flat, norms, dim };
+}
+
+/**
+ * Similarity of the k-th nearest neighbor of `targetVector` within `pool` — the bar a
+ * guess's raw cosine similarity to a word must clear to count as "in range" of it, rather
+ * than judging closeness by raw similarity magnitude alone. Scans the pool once, keeping
+ * only the top k via a bounded min-heap instead of a full sort. Callers should cache the
+ * result per word, since it only ever depends on the static embedding.
+ */
+export function findTopKThreshold(
+  pool: NeighborPool,
+  targetVector: Float32Array,
+  excludeWord: string,
+  k: number
+): number | null {
+  const { words, flat, norms, dim } = pool;
+  const n = words.length;
+
+  let targetNorm = 0;
+  for (let d = 0; d < dim; d++) targetNorm += targetVector[d] * targetVector[d];
+  targetNorm = Math.sqrt(targetNorm);
+  if (targetNorm === 0) return null;
+
+  const heap = new Float64Array(k);
+  let heapSize = 0;
+  const heapPush = (v: number) => {
+    heap[heapSize] = v;
+    let i = heapSize++;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (heap[parent] <= heap[i]) break;
+      const t = heap[parent];
+      heap[parent] = heap[i];
+      heap[i] = t;
+      i = parent;
+    }
+  };
+  const heapReplaceRoot = (v: number) => {
+    heap[0] = v;
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1;
+      const r = 2 * i + 2;
+      let smallest = i;
+      if (l < heapSize && heap[l] < heap[smallest]) smallest = l;
+      if (r < heapSize && heap[r] < heap[smallest]) smallest = r;
+      if (smallest === i) break;
+      const t = heap[i];
+      heap[i] = heap[smallest];
+      heap[smallest] = t;
+      i = smallest;
+    }
+  };
+
+  for (let j = 0; j < n; j++) {
+    if (words[j] === excludeWord) continue;
+    const off = j * dim;
+    let dot = 0;
+    for (let d = 0; d < dim; d++) dot += targetVector[d] * flat[off + d];
+    const sim = dot / (targetNorm * norms[j]);
+    if (heapSize < k) {
+      heapPush(sim);
+    } else if (sim > heap[0]) {
+      heapReplaceRoot(sim);
+    }
+  }
+
+  return heapSize > 0 ? heap[0] : null;
+}

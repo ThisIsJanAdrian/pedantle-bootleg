@@ -1,11 +1,9 @@
 import type { WordTemplate } from "../api";
 
-const GRAY_THRESHOLD = 15;
-
-function boxColor(temperature: number, gradeable: boolean): string {
-  if (!gradeable || temperature < GRAY_THRESHOLD) return "#141414";
-  const lightness = 12 + Math.min(temperature, 99) * 0.55;
-  return `hsl(0, 0%, ${lightness}%)`;
+// 0-99 score -> 0-49.5% opacity; a full match never reaches here (it's rendered as
+// revealed text instead), so the ghost text never fully resolves into a plain reveal.
+function hintOpacity(temperature: number): number {
+  return Math.min(temperature, 99) * 0.005;
 }
 
 export function WordBox({
@@ -19,14 +17,24 @@ export function WordBox({
     return <span className="word word--revealed">{token.text}</span>;
   }
 
+  const showHint = gradeable && !!token.hintText;
+  // Widen the box to fit whichever is longer, the secret word or the ghosted guess —
+  // otherwise a long guess ghosting onto a short hidden word clips into an illegible
+  // fragment instead of overflowing visibly. Shrinks back down once a shorter guess
+  // becomes the best match.
+  const widthChars = showHint ? Math.max(token.length, token.hintText!.length) : token.length;
+
   return (
     <span
       className="word word--hidden"
-      style={{
-        width: `${token.length * 0.7}em`,
-        backgroundColor: boxColor(token.temperature, gradeable),
-      }}
+      style={{ width: `${widthChars * 0.7}em` }}
       title={`${token.length} letters`}
-    />
+    >
+      {showHint && (
+        <span className="word__hint" style={{ opacity: hintOpacity(token.temperature) }}>
+          {token.hintText}
+        </span>
+      )}
+    </span>
   );
 }

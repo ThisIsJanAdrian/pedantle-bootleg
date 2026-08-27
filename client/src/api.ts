@@ -1,7 +1,13 @@
 export type WordTemplate =
   | { isWord: false; text: string }
   | { isWord: true; revealed: true; text: string }
-  | { isWord: true; revealed: false; length: number; temperature: number };
+  | {
+      isWord: true;
+      revealed: false;
+      length: number;
+      temperature: number;
+      hintText?: string;
+    };
 
 export interface GuessRecord {
   word: string;

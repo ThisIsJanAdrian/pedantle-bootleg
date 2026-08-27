@@ -59,10 +59,26 @@ body {
 }
 
 .word--hidden {
+  position: relative;
   height: 1em;
   vertical-align: middle;
   border-radius: 3px;
   margin: 0 1px;
+  overflow: hidden;
+  background-color: #141414;
+}
+
+.word__hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
 }
 
 .dev-panel {
@@ -143,8 +159,12 @@ body {
   border-radius: 4px;
 }
 
-.guess--matched {
+.guess--green {
   background: #1f3d1f;
+}
+
+.guess--orange {
+  background: #3d2f1a;
 }
 
 .guess__number {
@@ -156,7 +176,18 @@ body {
   flex: 1;
 }
 
-.guess__temperature {
-  color: #aaa;
-  font-variant-numeric: tabular-nums;
+.guess__status {
+  font-weight: 600;
+}
+
+.guess--green .guess__status {
+  color: #7ee787;
+}
+
+.guess--orange .guess__status {
+  color: #f0b34d;
+}
+
+.guess--red .guess__status {
+  color: #888;
 }
