@@ -62,7 +62,7 @@ export function App() {
       {view && !loading && (
         <>
           {view.debug && (
-            <details className="dev-panel" open>
+            <details className="dev-panel">
               <summary>DEV MODE — answer key</summary>
               <p>
                 <strong>Title:</strong> {view.debug.title}

@@ -296,27 +296,27 @@ export function submitGuess(
     }
   }
 
-  let temperature = 0;
-  if (matched) {
-    temperature = 100;
-  } else {
-    const vectors = requireVectors();
-    const guessVector = vectors.get(normGuess);
-    if (guessVector) {
-      for (const target of state.uniqueWords.values()) {
-        if (state.revealedStems.has(target.stem) || !target.vector) continue;
-        const sims = getNeighborSimilarities(target.normalized, target.vector);
-        if (sims === null) continue;
-        const similarity = cosineSimilarity(guessVector, target.vector);
-        const rank = rankWithinNeighbors(sims, similarity);
-        if (rank > sims.length) continue; // outside this word's top-K neighbors: no hint
-        const scaled = scoreFromRank(rank, sims.length);
-        const prevBest = state.bestGuesses.get(target.normalized)?.score ?? 0;
-        if (scaled > prevBest) {
-          state.bestGuesses.set(target.normalized, { word: rawGuess, score: scaled });
-        }
-        if (scaled > temperature) temperature = scaled;
+  // An exact match on one word (e.g. "calculate") shouldn't stop this same guess from also
+  // hinting at other still-hidden words it's genuinely close to (e.g. "calculator") — so
+  // this always runs, even when `matched` is already true. revealedStems already excludes
+  // whatever this guess just solved, so there's no risk of re-scoring it.
+  let temperature = matched ? 100 : 0;
+  const vectors = requireVectors();
+  const guessVector = vectors.get(normGuess);
+  if (guessVector) {
+    for (const target of state.uniqueWords.values()) {
+      if (state.revealedStems.has(target.stem) || !target.vector) continue;
+      const sims = getNeighborSimilarities(target.normalized, target.vector);
+      if (sims === null) continue;
+      const similarity = cosineSimilarity(guessVector, target.vector);
+      const rank = rankWithinNeighbors(sims, similarity);
+      if (rank > sims.length) continue; // outside this word's top-K neighbors: no hint
+      const scaled = scoreFromRank(rank, sims.length);
+      const prevBest = state.bestGuesses.get(target.normalized)?.score ?? 0;
+      if (scaled > prevBest) {
+        state.bestGuesses.set(target.normalized, { word: rawGuess, score: scaled });
       }
+      if (scaled > temperature) temperature = scaled;
     }
   }
 
