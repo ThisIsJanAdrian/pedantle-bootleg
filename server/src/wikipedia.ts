@@ -48,8 +48,10 @@ const STOP_HEADINGS = new Set([
 ]);
 
 // Basic Latin letters/digits/punctuation, plus the handful of "smart" typographic
-// characters Wikipedia extracts commonly use (en/em dash, curly quotes, ellipsis).
-// Anything else (accented Latin, other scripts) fails this and the article is skipped.
+// and currency characters Wikipedia extracts commonly use (en/em dash, curly quotes,
+// ellipsis, £/€/¥/°). Anything else (accented Latin, other scripts) fails this. Only the
+// title is required to pass it wholesale (see fetchOneCandidate) — the game module runs
+// this per-word over the body to decide which words are eligible to be guessed/revealed.
 const ALLOWED_CHARS_RE = /^[\x20-\x7E\n–—‘’“”…!#%&()$£€¥°]*$/;
 
 export interface WikiArticle {
@@ -71,7 +73,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isAsciiFriendly(text: string): boolean {
+export function isAsciiFriendly(text: string): boolean {
   return ALLOWED_CHARS_RE.test(text);
 }
 
@@ -161,8 +163,8 @@ async function fetchOneCandidate(word: string): Promise<WikiArticle | null> {
     if (process.env.WIKI_DEBUG) console.log("[wiki] reject too-short:", page.title);
     return null;
   }
-  if (!isAsciiFriendly(page.title) || !isAsciiFriendly(introText)) {
-    if (process.env.WIKI_DEBUG) console.log("[wiki] reject non-ascii:", page.title);
+  if (!isAsciiFriendly(page.title)) {
+    if (process.env.WIKI_DEBUG) console.log("[wiki] reject non-ascii title:", page.title);
     return null;
   }
 

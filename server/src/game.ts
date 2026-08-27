@@ -61,6 +61,9 @@ function buildUniqueWords(tokens: Token[], into: Map<string, TargetWord>): void 
   const vectors = requireVectors();
   for (const token of tokens) {
     if (!token.isWord) continue;
+    // normalizeWord() strips accents (café -> cafe) so an ASCII guess matches; words in
+    // other scripts have no ASCII form and normalize to "", which is skipped here — they
+    // stay in the text but can never be revealed.
     const normalized = normalizeWord(token.text);
     if (!normalized || into.has(normalized)) continue;
     into.set(normalized, {

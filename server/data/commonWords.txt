@@ -13,7 +13,6 @@ elephant
 giraffe
 monkey
 gorilla
-chimpanzee
 kangaroo
 koala
 panda
@@ -50,8 +49,6 @@ swan
 pelican
 crow
 sparrow
-hummingbird
-woodpecker
 dolphin
 whale
 shark
@@ -76,7 +73,6 @@ chameleon
 crocodile
 alligator
 snake
-python
 cobra
 frog
 toad
@@ -101,14 +97,8 @@ earthworm
 
 # Plants and nature
 tree
-oak
-pine
-maple
-willow
 bamboo
 cactus
-fern
-moss
 algae
 flower
 rose
@@ -124,8 +114,6 @@ grass
 wheat
 corn
 rice
-barley
-oat
 mountain
 valley
 canyon
@@ -134,10 +122,6 @@ desert
 forest
 jungle
 rainforest
-savanna
-swamp
-marsh
-wetland
 river
 lake
 ocean
@@ -200,7 +184,6 @@ cell
 chromosome
 gene
 ecosystem
-biodiversity
 climate
 weather
 pressure
@@ -217,8 +200,6 @@ laser
 satellite
 rocket
 spacecraft
-chemist
-test_tube
 
 # Everyday objects
 chair
@@ -293,7 +274,6 @@ tower
 bridge
 tunnel
 dam
-aqueduct
 lighthouse
 windmill
 skyscraper
@@ -310,7 +290,6 @@ clinic
 pharmacy
 factory
 warehouse
-greenhouse
 fountain
 monument
 statue
@@ -566,8 +545,6 @@ accordion
 harmonica
 ukulele
 banjo
-mandolin
-bagpipe
 
 # Shapes
 triangle
