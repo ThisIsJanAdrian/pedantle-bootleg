@@ -49,8 +49,10 @@ seconds and a few hundred MB of RAM.
   `natural`'s Porter stemmer) so plural/conjugated forms of a guessed word count as a match.
 - `server/src/game.ts` holds all game state in memory per `gameId` — the secret words are never
   sent to the client; only reveal/temperature info per guess is.
-- The client (`client/src`) renders black boxes sized to word length, grays them based on the
-  best similarity temperature seen so far, and shows a sorted guess history.
+- The client (`client/src`) renders black boxes sized to word length. Once a guess lands within a
+  hidden word's nearest-neighbor rank (see below), that guess's own text — never the secret word —
+  ghosts onto the box at low opacity, brightening the closer the rank. The guess history sidebar
+  tags each guess Found/Close/Cold instead of showing a raw score.
 
 ## Dev / debugging env vars
 
@@ -68,5 +70,20 @@ seconds and a few hundred MB of RAM.
 
 - Game state is in-memory only — restarting the server loses in-progress games.
 - No accounts, daily shared puzzle, or leaderboard/ranking yet.
-- Temperature is a simple linear rescale of cosine similarity, not the percentile-rank scoring
-  the real Cemantle/Pedantle algorithm uses.
+- Closeness is judged by a guess's *rank* among a target word's 100 nearest neighbors (scored on
+  a concave curve), not a flat similarity cutoff or raw score — this matches the intent of real
+  Pedantle/Cemantle's percentile-based scoring. Words among the ~300 most frequent in the
+  embedding (articles, prepositions, auxiliary verbs, etc.) are excluded from this entirely and
+  only guessable by exact/stemmed match — their vectors are too non-specific to give a meaningful
+  "how close" signal (e.g. "history" is a top-100 nearest neighbor of "of" by raw rank).
+- **GloVe can't tell word senses apart, so closeness hints can target the wrong meaning of a
+  polysemous secret word.** GloVe (like all static word embeddings) assigns one vector per word
+  *spelling*, blending every sense a word is used in across the training corpus into a single
+  point, weighted by how often each sense occurs. If the secret word is "surface" used in the
+  sense of "to emerge/be mentioned," the embedding is still dominated by the far more common
+  physical-noun sense (top of a liquid, the ground, etc.) — so "liquid" lands as a top-15
+  nearest neighbor (similarity 0.63) while "mentioned," the sense actually intended, ranks
+  ~8,600th (similarity 0.20), nowhere near close enough to ever hint. There's no cutoff or curve
+  tuning that fixes this — the wrong sense is baked into the vector itself. A real fix would mean
+  swapping to context-sensitive (e.g. BERT-style) embeddings that produce a different vector per
+  usage, which is a materially bigger change than adjusting a similarity threshold.
