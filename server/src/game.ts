@@ -45,6 +45,13 @@ const NEIGHBOR_POOL_SIZE = 50_000;
 // "most frequent" is just "first N" — see buildStopwordSet.
 const STOPWORD_FREQUENCY_CUTOFF = 300;
 
+// Games with no activity (no guess, and originally just "created and never touched" — e.g.
+// the duplicate game React's StrictMode double-mount creates client-side and immediately
+// abandons in favor of the second, or a player who just closes the tab) are swept out of
+// memory after this long, so `games` doesn't grow unbounded over a long-running server.
+const GAME_TTL_MS = 2 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
+
 export class NotFoundError extends Error {}
 export class BadRequestError extends Error {}
 
@@ -97,6 +104,7 @@ interface GameState {
   // client as ghost text over that word's box (see buildTemplate), not the secret word.
   bestGuesses: Map<string, BestGuess>;
   guesses: GuessRecord[];
+  lastActivity: number;
 }
 
 let globalVectors: VectorMap | null = null;
@@ -122,11 +130,20 @@ function buildStopwordSet(vectors: VectorMap, limit: number): Set<string> {
 // game. Guess-time lookups are then just a binary search (rankWithinNeighbors).
 const neighborSimilarityCache = new Map<string, Float32Array>();
 
+function sweepStaleGames(): void {
+  const cutoff = Date.now() - GAME_TTL_MS;
+  for (const [id, state] of games) {
+    if (state.lastActivity < cutoff) games.delete(id);
+  }
+}
+
 export function initGameModule(vectors: VectorMap, options: { devMode?: boolean } = {}): void {
   globalVectors = vectors;
   globalPool = buildNeighborPool(vectors, NEIGHBOR_POOL_SIZE);
   globalStopwords = buildStopwordSet(vectors, STOPWORD_FREQUENCY_CUTOFF);
   devMode = options.devMode ?? false;
+  // unref() so this background sweep never keeps the process alive on its own.
+  setInterval(sweepStaleGames, CLEANUP_INTERVAL_MS).unref();
 }
 
 function requireVectors(): VectorMap {
@@ -209,6 +226,7 @@ export async function createGame(): Promise<{ gameId: string; view: GameView }> 
     guessedStems: new Set(),
     bestGuesses: new Map(),
     guesses: [],
+    lastActivity: Date.now(),
   };
 
   const gameId = crypto.randomUUID();
@@ -290,6 +308,7 @@ export function submitGuess(
   rawGuess: string
 ): { view: GameView; alreadyGuessed: boolean } {
   const state = getGame(gameId);
+  state.lastActivity = Date.now();
   const normGuess = normalizeWord(rawGuess);
   if (!normGuess) throw new BadRequestError("Guess must contain letters or numbers");
 

@@ -28,6 +28,27 @@ body {
   color: #ff6b6b;
 }
 
+.loading-words {
+  font-size: 1.1rem;
+  color: #aaa;
+}
+
+.loading-words__word {
+  display: inline-block;
+  animation: loading-words-fade 0.18s ease-out;
+}
+
+@keyframes loading-words-fade {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .app__notice {
   color: #ccc;
   font-style: italic;
