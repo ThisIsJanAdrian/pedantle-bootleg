@@ -15,6 +15,7 @@ export interface GameView {
   bodyTemplate: WordTemplate[];
   guesses: GuessRecord[];
   gameWon: boolean;
+  debug?: { title: string; body: string };
 }
 
 export interface NewGameResponse extends GameView {

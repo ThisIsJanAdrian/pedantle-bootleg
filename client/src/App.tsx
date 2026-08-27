@@ -53,10 +53,24 @@ export function App() {
       </header>
 
       {loading && <p>Loading a fresh article...</p>}
-      {error && <p className="app__error">{error}</p>}
+      {error && (
+        <p className="app__error">
+          {error} <button onClick={beginNewGame}>Try again</button>
+        </p>
+      )}
 
       {view && !loading && (
         <>
+          {view.debug && (
+            <details className="dev-panel" open>
+              <summary>DEV MODE — answer key</summary>
+              <p>
+                <strong>Title:</strong> {view.debug.title}
+              </p>
+              <p className="dev-panel__body">{view.debug.body}</p>
+            </details>
+          )}
+
           <section className="title-block">
             <Paragraph tokens={view.titleTemplate} gradeable={false} />
           </section>

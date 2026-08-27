@@ -29,6 +29,7 @@ export interface GameView {
   bodyTemplate: WordTemplate[];
   guesses: GuessRecord[];
   gameWon: boolean;
+  debug?: { title: string; body: string };
 }
 
 interface GameState {
@@ -43,10 +44,12 @@ interface GameState {
 }
 
 let globalVectors: VectorMap | null = null;
+let devMode = false;
 const games = new Map<string, GameState>();
 
-export function initGameModule(vectors: VectorMap): void {
+export function initGameModule(vectors: VectorMap, options: { devMode?: boolean } = {}): void {
   globalVectors = vectors;
+  devMode = options.devMode ?? false;
 }
 
 function requireVectors(): VectorMap {
@@ -125,12 +128,19 @@ function isGameWon(state: GameState): boolean {
 }
 
 function buildView(state: GameState): GameView {
-  return {
+  const view: GameView = {
     titleTemplate: buildTemplate(state.titleTokens, state),
     bodyTemplate: buildTemplate(state.bodyTokens, state),
     guesses: [...state.guesses].sort((a, b) => b.temperature - a.temperature),
     gameWon: isGameWon(state),
   };
+  if (devMode) {
+    view.debug = {
+      title: state.title,
+      body: state.bodyTokens.map((t) => t.text).join(""),
+    };
+  }
+  return view;
 }
 
 function getGame(gameId: string): GameState {

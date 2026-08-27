@@ -28,8 +28,21 @@ seconds and a few hundred MB of RAM.
 
 ## How it works
 
-- `server/src/wikipedia.ts` pulls a random, decent-length Wikipedia article intro via the
-  MediaWiki API each time a game starts.
+- `server/src/wikipedia.ts` picks the secret from `server/data/commonWords.txt` — a curated pool
+  of ~550 everyday-knowledge nouns (animals, food, science concepts, everyday objects, etc.) —
+  rather than a truly random Wikipedia page. Plain `generator=random` skews heavily toward
+  obscure people/places/sports-seasons that are nearly unguessable; looking up a common word as a
+  page title (following redirects, e.g. `panda` → `Giant panda`) keeps the puzzle in the spirit of
+  the real Pedantle, where "secret words are all relatively common words ... everyone should
+  know." For each candidate it accumulates whole paragraphs (lead section first, then body
+  sections, skipping References/See also/External links/etc.) until it has at least 400 words —
+  never cutting a paragraph in half — and rejects the candidate if the title or text contain
+  anything outside basic Latin letters/digits/standard punctuation (plus common "smart"
+  punctuation like en/em dashes and curly quotes), or if it resolves to a disambiguation page.
+  Because of these filters, some candidates get skipped per game; this is retried automatically
+  (with backoff on Wikipedia's rate limiting) against a shuffled slice of the word list, up to
+  ~25 seconds before giving up, and the client shows a "Try again" button if it does. Add more
+  entries to `commonWords.txt` (one per line) to grow the pool.
 - `server/src/wordVectors.ts` loads GloVe vectors into memory once at boot and exposes cosine
   similarity.
 - `server/src/tokenizer.ts` splits text into word/punctuation tokens and stems words (via
@@ -38,6 +51,18 @@ seconds and a few hundred MB of RAM.
   sent to the client; only reveal/temperature info per guess is.
 - The client (`client/src`) renders black boxes sized to word length, grays them based on the
   best similarity temperature seen so far, and shows a sorted guess history.
+
+## Dev / debugging env vars
+
+- `DEV_MODE=1` (server): every game response includes a `debug` field with the real title and
+  full body text, shown in a collapsible panel at the top of the page. Guessing still works
+  normally — this is just an answer key for testing, it doesn't auto-fill anything.
+  ```
+  DEV_MODE=1 npm run dev -w server
+  ```
+- `WIKI_DEBUG=1` (server): logs why each candidate random article was accepted or rejected
+  (too short, non-ASCII, disambiguation, rate-limited, etc.) — useful if game creation is slow or
+  failing repeatedly.
 
 ## Known limitations (intentional for this MVP pass)
 

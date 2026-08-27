@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3001;
 const VECTORS_PATH =
   process.env.VECTORS_PATH ?? path.join(__dirname, "..", "data", "glove.6B.100d.txt");
+const DEV_MODE = process.env.DEV_MODE === "1" || process.env.DEV_MODE === "true";
 
 async function main() {
   if (!fs.existsSync(VECTORS_PATH)) {
@@ -27,7 +28,8 @@ async function main() {
   const start = Date.now();
   const vectors = await loadVectors(VECTORS_PATH);
   console.log(`Loaded ${vectors.size} word vectors in ${Date.now() - start}ms`);
-  initGameModule(vectors);
+  initGameModule(vectors, { devMode: DEV_MODE });
+  if (DEV_MODE) console.log("Dev mode ON — game responses will include the secret answer key");
 
   const app = express();
   app.use(cors());

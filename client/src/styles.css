@@ -65,6 +65,26 @@ body {
   margin: 0 1px;
 }
 
+.dev-panel {
+  background: #332a00;
+  border: 1px solid #7a6a1a;
+  color: #f0e6b0;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.dev-panel summary {
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.dev-panel__body {
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
 .win-banner {
   background: #1f3d1f;
   border: 1px solid #3c7a3c;
